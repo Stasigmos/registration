@@ -1,0 +1,345 @@
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="gameOverScreen" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); color:white; font-size:30px; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div id="gameOverMessage"></div>
+        <button id="restartBtn" style="font-size:20px; padding:10px 20px; margin-top:20px;">Play Again</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const restartBtn = document.getElementById('restartBtn');
+        const gameOverMessage = document.getElementById('gameOverMessage');
+
+        let x = 400;
+        let y = 500;
+        const speed = 5;
+        let mx = 0;
+        let my = 0;
+
+        const tankImage = new Image();
+        tankImage.src = 'tank.png';
+
+        const bulletImage = new Image();
+        bulletImage.src = 'pula.png';
+
+        const explosionImage = new Image();
+        explosionImage.src = 'vzriv.png';
+
+        const enemyTankImage = new Image();
+        enemyTankImage.src = 'vrag.png';
+
+        const tank = {
+            width: 60,
+            height: 60
+        };
+
+        const bullets = [];
+        let explosion = null;
+
+        // Много врагов
+        const enemies = [];
+        const numEnemies = 10; // количество врагов
+
+        // Инициализация врагов
+        for (let i = 0; i < numEnemies; i++) {
+            enemies.push({
+                x: Math.random() * (canvas.width - 50),
+                y: Math.random() * 200 + 50,
+                width: 50,
+                height: 50,
+                lives: 3,
+                alive: true
+            });
+        }
+
+        // Жизни для игрока
+        let playerLives = 3;
+
+        // Время для стрельбы врага в танк
+        let lastEnemyAimShotTime = Date.now();
+        const enemyAimShootInterval = 2000;
+
+        function shootEnemyAtTank(enemy) {
+            if (!enemy.alive) return;
+            const startX = enemy.x + enemy.width / 2;
+            const startY = enemy.y + enemy.height / 2;
+            const targetX = x + tank.width / 2;
+            const targetY = y + tank.height / 2;
+            const angle = Math.atan2(targetY - startY, targetX - startX);
+            bullets.push({
+                x: startX,
+                y: startY,
+                width: 10,
+                height: 10,
+                dx: Math.cos(angle) * 4,
+                dy: Math.sin(angle) * 4,
+                owner: 'enemy'
+            });
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowRight') {
+                mx = speed;
+            } else if (event.key === 'ArrowLeft') {
+                mx = -speed;
+            } else if (event.key === 'ArrowUp') {
+                my = -speed;
+            } else if (event.key === 'ArrowDown') {
+                my = speed;
+            }
+        });
+
+        document.addEventListener('keyup', (event) => {
+            if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                mx = 0;
+            }
+            if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                my = 0;
+            }
+        });
+
+        document.addEventListener('click', (event) => {
+            shootBullet(event.clientX, event.clientY);
+        });
+
+        function shootBullet(targetX, targetY) {
+            const startX = x + tank.width / 2;
+            const startY = y + tank.height / 2;
+            const angle = Math.atan2(targetY - startY, targetX - startX);
+            bullets.push({
+                x: startX,
+                y: startY,
+                width: 10,
+                height: 10,
+                dx: Math.cos(angle) * 5,
+                dy: Math.sin(angle) * 5,
+                owner: 'player'
+            });
+        }
+
+        function updateBullets() {
+            bullets.forEach((bullet, index) => {
+                bullet.x += bullet.dx;
+                bullet.y += bullet.dy;
+                if (
+                    bullet.x + bullet.width < 0 || 
+                    bullet.x > canvas.width || 
+                    bullet.y + bullet.height < 0 || 
+                    bullet.y > canvas.height
+                ) {
+                    bullets.splice(index, 1);
+                }
+            });
+        }
+
+        function drawTank() {
+            ctx.drawImage(tankImage, x, y, tank.width, tank.height);
+        }
+
+        function drawBullets() {
+            bullets.forEach(bullet => {
+                ctx.drawImage(bulletImage, bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+        }
+
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                if (enemy.alive) {
+                    ctx.drawImage(enemyTankImage, enemy.x, enemy.y, enemy.width, enemy.height);
+                }
+            });
+        }
+
+        function drawEnemyLives() {
+            ctx.font = '20px Arial';
+            ctx.fillStyle = 'red';
+            enemies.forEach(enemy => {
+                if (enemy.alive) {
+                    ctx.fillText(`Lives: ${enemy.lives}`, enemy.x, enemy.y - 10);
+                }
+            });
+        }
+
+        // Проверка попаданий и столкновений
+        function checkBulletCollision() {
+            bullets.forEach((bullet, bulletIndex) => {
+                // Попадание в врага
+                if (bullet.owner === 'player') {
+                    enemies.forEach((enemy, index) => {
+                        if (
+                            enemy.alive &&
+                            bullet.x < enemy.x + enemy.width &&
+                            bullet.x + bullet.width > enemy.x &&
+                            bullet.y < enemy.y + enemy.height &&
+                            bullet.y + bullet.height > enemy.y
+                        ) {
+                            bullets.splice(bulletIndex, 1);
+                            enemy.lives -= 1;
+                            if (enemy.lives <= 0) {
+                                enemy.alive = false;
+                                explosion = {
+                                    x: enemy.x + enemy.width / 2 - 25,
+                                    y: enemy.y + enemy.height / 2 - 25,
+                                    size: 50,
+                                    duration: 30
+                                };
+                            }
+                        }
+                    });
+                }
+                // Враг стреляет в танк
+                if (bullet.owner === 'enemy' &&
+                    x < bullet.x + bullet.width &&
+                    x + tank.width > bullet.x &&
+                    y < bullet.y + bullet.height &&
+                    y + tank.height > bullet.y
+                ) {
+                    bullets.splice(bulletIndex, 1);
+                    playerLives -= 1;
+                    if (playerLives <= 0) {
+                        endGame(false);
+                    }
+                }
+            });
+        }
+
+        function checkTankCollision() {
+            enemies.forEach(enemy => {
+                if (
+                    enemy.alive &&
+                    x < enemy.x + enemy.width &&
+                    x + tank.width > enemy.x &&
+                    y < enemy.y + enemy.height &&
+                    y + tank.height > enemy.y
+                ) {
+                    playerLives -= 1;
+                    if (playerLives <= 0) {
+                        endGame(false);
+                    }
+                }
+            });
+        }
+
+        function drawExplosion() {
+            if (explosion) {
+                ctx.drawImage(explosionImage, explosion.x, explosion.y, explosion.size, explosion.size);
+                explosion.duration -= 1;
+                if (explosion.duration <= 0) {
+                    explosion = null;
+                }
+            }
+        }
+
+        function moveEnemies() {
+            enemies.forEach(enemy => {
+                if (enemy.alive) {
+                    // Движение в сторону танка
+                    const angle = Math.atan2((y + tank.height/2) - (enemy.y + enemy.height/2), (x + tank.width/2) - (enemy.x + enemy.width/2));
+                    const speedEnemy = 1.5; // скорость врагов
+                    enemy.x += Math.cos(angle) * speedEnemy;
+                    enemy.y += Math.sin(angle) * speedEnemy;
+                }
+            });
+        }
+
+        // Основной цикл
+        function update() {
+            if (gameOverScreen.style.display === 'none') {
+                const now = Date.now();
+                if (now - lastEnemyAimShotTime > enemyAimShootInterval) {
+                    enemies.forEach(enemy => {
+                        if (enemy.alive) {
+                            shootEnemyAtTank(enemy);
+                        }
+                    });
+                    lastEnemyAimShotTime = now;
+                }
+
+                // Обновление положения танка
+                x += mx;
+                y += my;
+                if (x < 0) x = 0;
+                if (x + tank.width > canvas.width) x = canvas.width - tank.width;
+                if (y < 0) y = 0;
+                if (y + tank.height > canvas.height) y = canvas.height - tank.height;
+
+                updateBullets();
+                checkBulletCollision();
+                checkTankCollision();
+
+                moveEnemies();
+
+                // Проверка победы
+                const allEnemiesDefeated = enemies.every(enemy => !enemy.alive);
+                if (allEnemiesDefeated) {
+                    endGame(true);
+                }
+
+                // Проверка поражения
+                if (playerLives <= 0) {
+                    endGame(false);
+                }
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawTank();
+                drawBullets();
+                drawEnemies();
+                if (enemies.some(e => e.alive)) {
+                    drawEnemyLives();
+                }
+                drawExplosion();
+
+                // Жизни игрока
+                ctx.font = '20px Arial';
+                ctx.fillStyle = 'green';
+                ctx.fillText(`Your Lives: ${playerLives}`, 10, 30);
+
+                requestAnimationFrame(update);
+            }
+        }
+
+        function startGame() {
+            x = 400;
+            y = 500;
+            mx = 0;
+            my = 0;
+            // Обновляем врагов
+            enemies.length = 0;
+            for (let i = 0; i < numEnemies; i++) {
+                enemies.push({
+                    x: Math.random() * (canvas.width - 50),
+                    y: Math.random() * 200 + 50,
+                    width: 50,
+                    height: 50,
+                    lives: 3,
+                    alive: true
+                });
+            }
+            playerLives = 3;
+            bullets.length = 0;
+            explosion = null;
+            lastEnemyAimShotTime = Date.now();
+            gameOverScreen.style.display = 'none';
+            requestAnimationFrame(update);
+        }
+
+        function endGame(win) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.font = '40px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(win ? 'Congratulations! You Win!' : 'Game Over. Try Again!', canvas.width / 2, canvas.height / 2 - 20);
+            gameOverMessage.innerText = win ? 'Congratulations! You Win!' : 'Game Over. Try Again!';
+            gameOverScreen.style.display = 'flex';
+        }
+
+        restartBtn.addEventListener('click', () => {
+            startGame();
+        });
+
+        window.onload = () => {
+            startGame();
+        };
+    </script>
+</body>
